@@ -85,31 +85,6 @@ def for_file(path_prefix: str, solution: int, files: List[GcjFile]) -> None:
         with open(os.path.join(target, os.path.basename(file['full_path'])), 'w') as f:
             f.write(file['flines'])
 
-
-def interactive_search() -> None:
-    """Old Test method I used for searching through the solutions and identify first patterns
-    """
-    while True:
-        phrase = input()
-        print(f'searching user or phrase "{phrase}"')
-        results = list(filter(lambda elem: elem[0].lower() == phrase.lower(
-        ), TASK_MAPPING['5634697451274240']['java_files'].items()))
-        if len(results) == 0:
-            print('no users. Searching for file content')
-            results = list(
-                filter(
-                    lambda xs: any(
-                        phrase.lower() in x['flines'].lower() for x in xs[1]),
-                    TASK_MAPPING['5634697451274240']['java_files'].items()
-                )
-            )
-        print(f'found {len(results)}')
-        input()
-        for x in results:
-            for ls in x[1]:
-                print(ls['flines'])
-
-
 def process_task_mapping() -> None:
     for key, value in TASK_MAPPING.items():
         print(f'  * {value["name"]}')
@@ -146,8 +121,3 @@ if __name__ == '__main__':
     assign_csv(csvs)
     print(f'loaded with {len(csvs)} entries')
     process_task_mapping()
-
-    try:
-        interactive_search()
-    except EOFError:
-        print('Interactive session disabled')
