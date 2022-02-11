@@ -150,4 +150,4 @@ if __name__ == '__main__':
     try:
         interactive_search()
     except EOFError:
-        print('interaction session disabled')
+        print('Interactive session disabled')
