@@ -4,6 +4,7 @@ from collections import defaultdict
 from enum import Enum
 from itertools import product
 from os import path
+import random
 from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union, no_type_check
 
 
@@ -72,7 +73,7 @@ TASK_MAPPING: Dict[str, GcjMapping] = __make_mapping(
      (4304486, 5631989306621952, '2016 Round 1A -- The Last Word'),
      (6254486, 5652388522229760, '2016 Qualification Round -- Counting Sheep'),
      (4314486, 5753053697277952, '2016 Round 1C -- Senate Evacuation'),
-     (3224486, 5125089213284352, '2016 Round 3 -- Forest University'),
+     (3224486, 5125089213284352, '2016 Round 3 -- Forest University (only one problem set)'),
      (7234486, 5751639981948928, '2016 Finals -- Family Hotel'),
      ('000000000019fd74', '00000000002b1353', '2020 Round 1A -- Pattern Matching'),
      ('0000000000051705', '00000000000881da', '2019 Qualification Round -- You Can Go Your Own Way'),
@@ -142,7 +143,7 @@ def process_task_mapping() -> None:
 def extract_task(value: GcjMapping) -> None:
     prefix = path.join("gcj", value["name"])
     os.makedirs(prefix, exist_ok=True, mode=0o777)
-    file_combs = (["java", "c"], [GcjFileSolution.SMALL, GcjFileSolution.LARGE])
+    file_combs = (["java", "c"], [GcjFileSolution.SMALL, GcjFileSolution.LARGE, GcjFileSolution.OTHER])
     for combs in product(*file_combs):
         extract_file(prefix, value, combs[0], combs[1])
 
@@ -169,7 +170,10 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
 
 
 def for_file(path_prefix: str, files: List[GcjFile], sanitize: bool = False) -> None:
-    for f in files:
+    # Note: because more modern GCJs supply multiple problems sizes but do no longer encode them uniformly,
+    # for "other" problems we only select one solution id as they are the same most of the time
+    selected_solution = random.choice(tuple(set(map(lambda x: x['solution'], files))))
+    for f in filter(lambda x: x['solution'] == selected_solution, files):
         target = os.path.join(path_prefix, decode_solution(f['solution']))
         os.makedirs(target, exist_ok=True)
         filename = os.path.basename(f['full_path'] if f['full_path'] else f['file'].lower())
