@@ -4,7 +4,7 @@ from collections import defaultdict
 from enum import Enum
 from itertools import product
 from os import path
-from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
+from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union, no_type_check
 
 
 class GcjFileSolution(Enum):
@@ -43,8 +43,10 @@ class GcjMapping(TypedDict):
     name: RoundName
     java_small_files: DefaultDict[Username, List[GcjFile]]
     java_large_files: DefaultDict[Username, List[GcjFile]]
+    java_other_files: DefaultDict[Username, List[GcjFile]]
     c_small_files: DefaultDict[Username, List[GcjFile]]
     c_large_files: DefaultDict[Username, List[GcjFile]]
+    c_other_files: DefaultDict[Username, List[GcjFile]]
 
 
 def __build_file_id(fs: GcjFile) -> str:
@@ -55,28 +57,26 @@ def __build_file_id(fs: GcjFile) -> str:
 def __make_mapping(sources: List[Tuple[Union[int, str], Union[int, str], RoundName]]) -> Dict[str, GcjMapping]:
     ret: Dict[str, GcjMapping] = {}
     for mapping in sources:
-        ret[f"{mapping[0]}::{mapping[1]}"] = GcjMapping(
-            name=mapping[2],
-            java_small_files=defaultdict(lambda: []),
-            java_large_files=defaultdict(lambda: []),
-            c_small_files=defaultdict(lambda: []),
-            c_large_files=defaultdict(lambda: [])
-        )
+        ret[f"{mapping[0]}::{mapping[1]}"] = GcjMapping(name=mapping[2], java_small_files=defaultdict(lambda: []),
+                                                        java_large_files=defaultdict(lambda: []),
+                                                        java_other_files=defaultdict(lambda: []),
+                                                        c_small_files=defaultdict(lambda: []),
+                                                        c_large_files=defaultdict(lambda: []),
+                                                        c_other_files=defaultdict(lambda: []))
     return ret
 
 
 # task mapping
-TASK_MAPPING: Dict[str, GcjMapping] = __make_mapping([
-    (6254486, 5634697451274240, '2016 Qualification Round -- Revenge of the Pancakes'),
-    (4304486, 5631989306621952, '2016 Round 1A -- The Last Word'),
-    (6254486, 5652388522229760, '2016 Qualification Round -- Counting Sheep'),
-    (4314486, 5753053697277952, '2016 Round 1C -- Senate Evacuation'),
-    (3224486, 5125089213284352, '2016 Round 3 -- Forest University'),
-    (7234486, 5751639981948928, '2016 Finals -- Family Hotel'),
-    ('000000000019fd74', '00000000002b1353', '2020 Round 1A -- Pattern Matching'),
-    ('0000000000051705', '00000000000881da', '2019 Qualification Round -- You Can Go Your Own Way'),
-    ('000000000019fd27', '000000000020993c', '2020 Qualification Round -- Vestigium (only one problem set)')
-])
+TASK_MAPPING: Dict[str, GcjMapping] = __make_mapping(
+    [(6254486, 5634697451274240, '2016 Qualification Round -- Revenge of the Pancakes'),
+     (4304486, 5631989306621952, '2016 Round 1A -- The Last Word'),
+     (6254486, 5652388522229760, '2016 Qualification Round -- Counting Sheep'),
+     (4314486, 5753053697277952, '2016 Round 1C -- Senate Evacuation'),
+     (3224486, 5125089213284352, '2016 Round 3 -- Forest University'),
+     (7234486, 5751639981948928, '2016 Finals -- Family Hotel'),
+     ('000000000019fd74', '00000000002b1353', '2020 Round 1A -- Pattern Matching'),
+     ('0000000000051705', '00000000000881da', '2019 Qualification Round -- You Can Go Your Own Way'),
+     ('000000000019fd27', '000000000020993c', '2020 Qualification Round -- Vestigium (only one problem set)')])
 
 
 def cleanse_line(line: str) -> str:
@@ -85,8 +85,8 @@ def cleanse_line(line: str) -> str:
 
 def load_csv(csv_file: str) -> List[GcjFile]:
     with open(csv_file, 'r', encoding='utf-8') as csv_file:
-        reader = csv.DictReader((line.replace('\0', '') for line in csv_file),
-                                delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
+        reader = csv.DictReader((line.replace('\0', '') for line in csv_file), delimiter=',', quotechar='"',
+                                quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
         return cast(List[GcjFile], list(reader))
 
 
@@ -100,6 +100,8 @@ def __is_known_java(java_file: GcjFile) -> bool:
 
 
 __usable_java = __is_known_java
+
+
 # OLD: we restrict ourselves to files that use system.in and system.out
 
 
@@ -108,8 +110,7 @@ def __is_c(name: str) -> bool:
 
 
 def __is_known_c(c_file: GcjFile) -> bool:
-    return __build_file_id(c_file) in TASK_MAPPING and (
-            __is_c(c_file['full_path']) or __is_c(c_file['file']))
+    return __build_file_id(c_file) in TASK_MAPPING and (__is_c(c_file['full_path']) or __is_c(c_file['file']))
 
 
 __usable_c = __is_known_c
@@ -117,20 +118,23 @@ __usable_c = __is_known_c
 
 def assign_csv(files: List[GcjFile]):
     for f in files:
-        suffix = 'small' if f['solution'] == '0' else 'large'
+        suffix = 'small' if f['solution'] == '0' else 'large' if f['solution'] == '1' else 'other'
         if __usable_java(f):
             TASK_MAPPING[__build_file_id(f)][f'java_{suffix}_files'][f['username']].append(f)  # type: ignore
         elif __usable_c(f):
             TASK_MAPPING[__build_file_id(f)][f'c_{suffix}_files'][f['username']].append(f)  # type: ignore
 
 
+def __dump_task_mapping(m: GcjMapping, lang: str) -> str:
+    f = "_files"  # suppressing 'too long lines :)
+    return f'{len(m[lang + "_small" + f])}/{len(m[lang + "_large" + f])}/{len(m[lang + "_other" + f])}'  # type: ignore
+
+
 def process_task_mapping() -> None:
     for key, value in TASK_MAPPING.items():
         print(f'  * {value["name"]}')
-        print(
-            f'    - [java] {len(value["java_small_files"])} / {len(value["java_large_files"])} users  (small / large)')
-        print(
-            f'    - [c]    {len(value["c_small_files"])} / {len(value["c_large_files"])} users  (small / large')
+        print(f'    - [java] {__dump_task_mapping(value, "java")} users  (small / large / other)')
+        print(f'    - [c]    {__dump_task_mapping(value, "c")} users  (small / large / other)')
         extract_task(value)
 
 
@@ -138,15 +142,23 @@ def process_task_mapping() -> None:
 def extract_task(value: GcjMapping) -> None:
     prefix = path.join("gcj", value["name"])
     os.makedirs(prefix, exist_ok=True, mode=0o777)
-    file_combs = (["java", "c"], [
-        GcjFileSolution.SMALL, GcjFileSolution.LARGE])
+    file_combs = (["java", "c"], [GcjFileSolution.SMALL, GcjFileSolution.LARGE])
     for combs in product(*file_combs):
         extract_file(prefix, value, combs[0], combs[1])
 
 
+def decode_solution_string(sol: GcjFileSolution) -> str:
+    if sol == GcjFileSolution.SMALL:
+        return 'small'
+    elif sol == GcjFileSolution.LARGE:
+        return 'large'
+    else:
+        return 'other'
+
+
 def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFileSolution):
     assert file_type == "java" or file_type == "c"
-    solution_string = "small" if solution == GcjFileSolution.SMALL else "large"
+    solution_string = decode_solution_string(solution)
     prefix = path.join(prefix, file_type + "-" + solution_string)
     os.makedirs(prefix, exist_ok=True, mode=0o777)
     for user, files in value[f'{file_type}_{solution_string}_files'].items():  # type: ignore
