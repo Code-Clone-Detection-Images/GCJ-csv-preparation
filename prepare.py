@@ -1,16 +1,27 @@
-from collections import defaultdict
 import csv
 import os
-from itertools import product
+from collections import defaultdict
 from enum import Enum
-from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
+from itertools import product
 from os import path
+from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
 
 
 class GcjFileSolution(Enum):
     """We use this to decode several solution types"""
     SMALL = '0'
     LARGE = '1'
+    OTHER = '_'
+
+
+def decode_solution(sol: GcjFileSolution) -> str:
+    """convenience method to stay compatible with different google code jam formats"""
+    if sol == GcjFileSolution.SMALL:
+        return 'small'
+    elif sol == GcjFileSolution.LARGE:
+        return 'large'
+    else:
+        return str(sol)
 
 
 class GcjFile(TypedDict):
@@ -85,7 +96,7 @@ def __is_java(name: str) -> bool:
 
 def __is_known_java(java_file: GcjFile) -> bool:
     return __build_file_id(java_file) in TASK_MAPPING and (
-        __is_java(java_file['full_path']) or __is_java(java_file['file']))
+            __is_java(java_file['full_path']) or __is_java(java_file['file']))
 
 
 __usable_java = __is_known_java
@@ -142,13 +153,12 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
         # NOTE: we sanitize this username to prevent problems with path injects
         user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
         os.makedirs(user_prefix, exist_ok=True, mode=0o777)
-        for_file(user_prefix, 1, files, file_type == 'c')
-        for_file(user_prefix, 0, files, file_type == 'c')
-# TODO: separate small and large solutions
+        for_file(user_prefix, files, file_type == 'c')  # only sanitize c-files for CCCD atm
 
 
-def for_file(target: str, solution: int, files: List[GcjFile], sanitize: bool = False) -> None:
+def for_file(path_prefix: str, files: List[GcjFile], sanitize: bool = False) -> None:
     for f in files:
+        target = os.path.join(path_prefix, decode_solution(f['solution']))
         os.makedirs(target, exist_ok=True)
         filename = os.path.basename(f['full_path'] if f['full_path'] else f['file'].lower())
         if sanitize:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
@@ -159,14 +169,19 @@ def for_file(target: str, solution: int, files: List[GcjFile], sanitize: bool = 
 
 if __name__ == '__main__':
     import sys
+
     if len(sys.argv) < 2:
         exit(f'{sys.argv[0]} <files...>')
     csvs = []
+
+    print("==== Loading CSVs")
     for file in sys.argv[1:]:
-        print(f'loading by {sys.argv[0]} for {file}')
+        print(f'loading by {sys.argv[0]} for {file}', flush=True)
         csvs.extend(load_csv(file))
+
+    print("==== Assigning CSVs", flush=True)
     assign_csv(csvs)
-    print(f'loaded with {len(csvs)} entries')
+    print(f'loaded with {len(csvs)} entries', flush=True)
+
+    print("==== Process Task Mapping", flush=True)
     process_task_mapping()
-
-
