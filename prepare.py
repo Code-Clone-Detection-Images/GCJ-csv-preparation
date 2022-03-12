@@ -1,9 +1,9 @@
 from collections import defaultdict
 import csv
 import os
-from typing import TypedDict, List, Dict, DefaultDict, cast
 from itertools import product
 from enum import Enum
+from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
 from os import path
 
 
@@ -14,6 +14,7 @@ class GcjFileSolution(Enum):
 
 class GcjFile(TypedDict):
     full_path: str
+    file: str  # for 2019
     username: str
     flines: str
     year: str
@@ -33,16 +34,36 @@ class GcjMapping(TypedDict):
     c_large_files: DefaultDict[Username, List[GcjFile]]
 
 
-# task mapping 6254486
-TASK_MAPPING: Dict[str, GcjMapping] = {
-    '5634697451274240': {
-        'name': "Qualification Round -- Revenge of the Pancakes",
-        'java_small_files': defaultdict(lambda: []),
-        'java_large_files': defaultdict(lambda: []),
-        'c_small_files': defaultdict(lambda: []),
-        'c_large_files': defaultdict(lambda: [])
-    }
-}
+def __build_file_id(file: GcjFile) -> str:
+    return f"{file['round']}::{file['task']}"
+
+
+# round | task | name
+def __make_mapping(sources: List[Tuple[Union[int, str], Union[int, str], str]]) -> Dict[str, GcjMapping]:
+    ret: Dict[str, GcjMapping] = {}
+    for mapping in sources:
+        ret[f"{mapping[0]}::{mapping[1]}"] = {
+            'name': mapping[2],
+            'java_small_files': defaultdict(lambda: []),
+            'java_large_files': defaultdict(lambda: []),
+            'c_small_files': defaultdict(lambda: []),
+            'c_large_files': defaultdict(lambda: [])
+        }
+    return ret
+
+
+# task mapping
+TASK_MAPPING: Dict[str, GcjMapping] = __make_mapping([
+    (6254486, 5634697451274240, '2016 Qualification Round -- Revenge of the Pancakes'),
+    (4304486, 5631989306621952, '2016 Round 1A -- The Last Word'),
+    (6254486, 5652388522229760, '2016 Qualification Round -- Counting Sheep'),
+    (4314486, 5753053697277952, '2016 Round 1C -- Senate Evacuation'),
+    (3224486, 5125089213284352, '2016 Round 3 -- Forest University'),
+    (7234486, 5751639981948928, '2016 Finals -- Family Hotel'),
+    ('000000000019fd74', '00000000002b1353', '2020 Round 1A -- Pattern Matching'),
+    ('0000000000051705', '00000000000881da', '2019 Qualification Round -- You Can Go Your Own Way'),
+    ('000000000019fd27', '000000000020993c', '2020 Qualification Round -- Vestigium (only one problem set)')
+])
 
 
 def cleanse_line(line: str) -> str:
@@ -57,32 +78,43 @@ def load_csv(file: str) -> List[GcjFile]:
 
 
 def __is_known_java(file: GcjFile) -> bool:
-    return file['task'] in TASK_MAPPING and file['full_path'].endswith('.java')
+    return __build_file_id(file) in TASK_MAPPING and (file['full_path'].lower().endswith('.java') or file['file'].lower().endswith('.java'))
 
 
 def __usable_java(file: GcjFile) -> bool:
-    # we restrict ourselves to files that use system.in and system.out
-    return 'System.in' in file['flines'] and 'System.out' in file['flines']
+    # OLD: we restrict ourselves to files that use system.in and system.out
+    return True  # 'System.in' in file['flines'] and 'System.out' in file['flines']
 
 
 def __is_known_c(file: GcjFile) -> bool:
-    return file['task'] in TASK_MAPPING and file['full_path'].endswith('.c')
+    return __build_file_id(file) in TASK_MAPPING and ((
+            # well...
+            file['full_path'].lower().endswith('.c') or
+            file['full_path'].lower().endswith('.cpp') or
+            file['full_path'].lower().endswith('.h ') or
+            file['full_path'].lower().endswith('.hpp'))
+            or
+            (
+            # well...
+            file['file'].lower().endswith('.c') or
+            file['file'].lower().endswith('.cpp') or
+            file['file'].lower().endswith('.h ') or
+            file['file'].lower().endswith('.hpp'))
+    )
 
 
 def __usable_c(file: GcjFile) -> bool:
     # do not redirect but read
-    return 'scan' in file['flines'] and 'print' in file['flines'] and 'freopen' not in file['flines']
+    return True  # 'scan' in file['flines'] and 'print' in file['flines'] and 'freopen' not in file['flines']
 
 
 def assign_csv(files: List[GcjFile]):
     for file in files:
         suffix = 'small' if file['solution'] == '0' else 'large'
         if __is_known_java(file) and __usable_java(file):
-            TASK_MAPPING[file['task']
-                         ][f'java_{suffix}_files'][file['username']].append(file)
+            TASK_MAPPING[__build_file_id(file)][f'java_{suffix}_files'][file['username']].append(file)  # type: ignore
         elif __is_known_c(file) and __usable_c(file):
-            TASK_MAPPING[file['task']
-                         ][f'c_{suffix}_files'][file['username']].append(file)
+            TASK_MAPPING[__build_file_id(file)][f'c_{suffix}_files'][file['username']].append(file)  # type: ignore
 
 
 def process_task_mapping() -> None:
@@ -99,8 +131,8 @@ def process_task_mapping() -> None:
 def extract_task(value: GcjMapping) -> None:
     prefix = path.join("gcj", value["name"])
     os.makedirs(prefix, exist_ok=True, mode=0o777)
-    file_combs = [["java", "c"], [
-        GcjFileSolution.SMALL, GcjFileSolution.LARGE]]
+    file_combs = (["java", "c"], [
+        GcjFileSolution.SMALL, GcjFileSolution.LARGE])
     for combs in product(*file_combs):
         extract_file(prefix, value, combs[0], combs[1])
 
@@ -110,31 +142,35 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
     solution_string = "small" if solution == GcjFileSolution.SMALL else "large"
     prefix = path.join(prefix, file_type + "-" + solution_string)
     os.makedirs(prefix, exist_ok=True, mode=0o777)
-    for user, files in value[f'{file_type}_{solution_string}_files'].items():
-        user_prefix = path.join(prefix, user)
+    for user, files in value[f'{file_type}_{solution_string}_files'].items():  # type: ignore
+        user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))  # NOTE: we sanitize this username to prevent problems with path injects
         os.makedirs(user_prefix, exist_ok=True, mode=0o777)
         for_file(user_prefix, 1, files, file_type == 'c')
         for_file(user_prefix, 0, files, file_type == 'c')
+# TODO: separate small and large solutions
 
 
-def for_file(path_prefix: str, solution: int, files: List[GcjFile], kill_space: bool = False) -> None:
-    for file in filter(lambda f: f['solution'] == str(solution), files):
-        target = os.path.join(
-            path_prefix, 'large' if file['solution'] == '1' else 'small')
+def for_file(target: str, solution: int, files: List[GcjFile], sanitize: bool = False) -> None:
+    for file in files:
         os.makedirs(target, exist_ok=True)
-        filename = os.path.basename(file['full_path'])
-        if kill_space:  # spaces are a problem. some tools like cccd do not allow them
-            filename = filename.replace(' ', '-')
-        with open(os.path.join(target, ), 'w') as f:
+        filename = os.path.basename(file['full_path'] if file['full_path'] else file['file'].lower())
+        if sanitize:  # spaces, braces etc are a problem. some tools like cccd do not allow them
+            filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_')
+        with open(os.path.join(target, filename), 'w') as f:
             f.write(file['flines'])
 
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) != 2:
-        exit(f'{sys.argv[0]} <file>')
-    print(f'loading by {sys.argv[0]} for {sys.argv[1]}')
-    csvs = load_csv(sys.argv[1])
+    if len(sys.argv) < 2:
+        exit(f'{sys.argv[0]} <files...>')
+    csvs = []
+    for file in sys.argv[1:]:
+        print(f'loading by {sys.argv[0]} for {file}')
+        csvs.extend(load_csv(file))
     assign_csv(csvs)
     print(f'loaded with {len(csvs)} entries')
     process_task_mapping()
+
+
+# TODO: iterate over all 'solutions' as they are different => we have to collect all of them.
