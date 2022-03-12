@@ -15,3 +15,5 @@ Example:
 make
 ./run.sh configuration.yaml gcj2016.csv gcj2019.csv gcj2020.csv 
 ```
+
+After the command, you will find all prepared folders inside of [`gcj/`](gcj).
