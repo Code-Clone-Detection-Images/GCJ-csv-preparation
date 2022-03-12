@@ -17,3 +17,5 @@ make
 ```
 
 After the command, you will find all prepared folders inside of [`gcj/`](gcj).
+
+> The requirements have been created using [pipreqs](https://pypi.org/project/pipreqs/).

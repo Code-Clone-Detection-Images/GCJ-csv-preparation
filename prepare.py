@@ -1,6 +1,7 @@
 import csv
 import os
 import random
+import re
 from collections import defaultdict
 from enum import Enum
 from itertools import product
@@ -104,7 +105,16 @@ def __is_known_java(java_file: GcjFile) -> bool:
             __is_java(java_file['full_path']) or __is_java(java_file['file']))
 
 
-__usable_java = __is_known_java
+# we make an inverse check to forbid java
+NEGATIVE_USABLE_JAVA_REGEX = re.compile(r"import (?!java)[^;]*;")
+
+
+def __usable_java(java_file: GcjFile) -> bool:
+    """To be usable, a java file must only contain import statements that are part of the standard.
+       We may permit package declarations and remove them if necessary with each tool. """
+    return __is_known_java(java_file) and (
+        not NEGATIVE_USABLE_JAVA_REGEX.search(java_file['flines'])
+    )
 
 
 # OLD: we restrict ourselves to files that use system.in and system.out
@@ -175,7 +185,7 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
         for_file(user_prefix, files, file_type == 'c')  # only sanitize c-files for CCCD atm
 
 
-def for_file(path_prefix: str, files: List[GcjFile], sanitize: bool = False) -> None:
+def for_file(path_prefix: str, files: List[GcjFile], sanitize_name: bool = False) -> None:
     # Note: because more modern GCJs supply multiple problems sizes but do no longer encode them uniformly,
     # for "other" problems we only select one solution id as they are the same most of the time
     selected_solution = random.choice(tuple(set(map(lambda x: x['solution'], files))))
@@ -183,7 +193,7 @@ def for_file(path_prefix: str, files: List[GcjFile], sanitize: bool = False) -> 
         target = os.path.join(path_prefix, decode_solution(f['solution']))
         os.makedirs(target, exist_ok=True)
         filename = os.path.basename(f['full_path'] if f['full_path'] else f['file'].lower())
-        if sanitize:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
+        if sanitize_name:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
             filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_')
         with open(os.path.join(target, filename), 'w') as fl:
             fl.write(f['flines'])
