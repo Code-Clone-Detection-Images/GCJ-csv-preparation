@@ -68,18 +68,19 @@ def __make_mapping(sources: List[Tuple[Union[int, str], Union[int, str], RoundNa
     return ret
 
 
-def load_task_mapping(configuration_file: str) -> Dict[str, GcjMapping]:
+def load_task_mapping(configuration_file: str) -> Tuple[Dict[str, GcjMapping], int]:
     with open(configuration_file, 'r') as f:
         raw_mapping = yaml.safe_load(f)
         # use the old-school mapping stuff
         mapping = []
         for rm, rk in raw_mapping['problems'].items():
             mapping.append((rk['round'], rk['task'], rm))
-        return __make_mapping(mapping)
+        return __make_mapping(mapping), int(raw_mapping['pick-random'])
 
 
 # task mapping
 TASK_MAPPING: Dict[str, GcjMapping]
+PICK_COUNT: int
 
 
 def cleanse_line(line: str) -> str:
@@ -135,9 +136,9 @@ def __dump_task_mapping(m: GcjMapping, lang: str) -> str:
 
 def process_task_mapping() -> None:
     for key, value in TASK_MAPPING.items():
-        print(f'  * {value["name"]}')
-        print(f'    - [java] {__dump_task_mapping(value, "java")} users  (small / large / other)')
-        print(f'    - [c]    {__dump_task_mapping(value, "c")} users  (small / large / other)')
+        print(f'  * {value["name"]}', flush=True)
+        print(f'    - [java] {__dump_task_mapping(value, "java")} users  (small / large / other)', flush=True)
+        print(f'    - [c]    {__dump_task_mapping(value, "c")} users  (small / large / other)', flush=True)
         extract_task(value)
 
 
@@ -164,7 +165,10 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
     solution_string = decode_solution_string(solution)
     prefix = path.join(prefix, file_type + "-" + solution_string)
     os.makedirs(prefix, exist_ok=True, mode=0o777)
-    for user, files in value[f'{file_type}_{solution_string}_files'].items():  # type: ignore
+    # instead of random.choices we use one shuffle and pick from the start, this is faster than iterated random perm.
+    users = list(value[f'{file_type}_{solution_string}_files'].items())  # type: ignore
+    random.shuffle(users)
+    for user, files in users[0:PICK_COUNT] if PICK_COUNT != 0 else users:
         # NOTE: we sanitize this username to prevent problems with path injects
         user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
         os.makedirs(user_prefix, exist_ok=True, mode=0o777)
@@ -192,7 +196,7 @@ if __name__ == '__main__':
         exit(f'{sys.argv[0]} <configuration.yaml> <files...>')
 
     print("==== Loading Configuration")
-    TASK_MAPPING = load_task_mapping(sys.argv[1])
+    TASK_MAPPING, PICK_COUNT = load_task_mapping(sys.argv[1])
 
     csvs = []
     print("==== Loading CSVs")
@@ -204,5 +208,6 @@ if __name__ == '__main__':
     assign_csv(csvs)
     print(f'loaded with {len(csvs)} entries', flush=True)
 
-    print("==== Process Task Mapping", flush=True)
+    print(f"==== Process Task Mapping [Pick: {PICK_COUNT}]", flush=True)
     process_task_mapping()
+

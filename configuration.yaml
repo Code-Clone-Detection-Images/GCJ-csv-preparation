@@ -1,3 +1,8 @@
+# This enforces to selected just 'n' elements of each solution size (if available)
+# if you supply '0' this is equivalent to pick all, if you supply a negative value
+# this is equivalent to array slicing [0:<pick-random>]
+pick-random: 200
+
 problems:
   2016 Qualification Round -- Revenge of the Pancakes:
     round: 6254486
