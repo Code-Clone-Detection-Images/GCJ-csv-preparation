@@ -1,11 +1,12 @@
 import csv
 import os
+import random
 from collections import defaultdict
 from enum import Enum
 from itertools import product
 from os import path
-import random
 from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
+
 import yaml
 
 
@@ -142,7 +143,6 @@ def process_task_mapping() -> None:
         extract_task(value)
 
 
-# todo: allow to configure output path relative to start
 def extract_task(value: GcjMapping) -> None:
     prefix = path.join("gcj", value["name"])
     os.makedirs(prefix, exist_ok=True, mode=0o777)
@@ -210,4 +210,3 @@ if __name__ == '__main__':
 
     print(f"==== Process Task Mapping [Pick: {PICK_COUNT}]", flush=True)
     process_task_mapping()
-
