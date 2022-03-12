@@ -5,7 +5,8 @@ from enum import Enum
 from itertools import product
 from os import path
 import random
-from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union, no_type_check
+from typing import TypedDict, List, Dict, DefaultDict, cast, Tuple, Union
+import yaml
 
 
 class GcjFileSolution(Enum):
@@ -67,17 +68,18 @@ def __make_mapping(sources: List[Tuple[Union[int, str], Union[int, str], RoundNa
     return ret
 
 
+def load_task_mapping(configuration_file: str) -> Dict[str, GcjMapping]:
+    with open(configuration_file, 'r') as f:
+        raw_mapping = yaml.safe_load(f)
+        # use the old-school mapping stuff
+        mapping = []
+        for rm, rk in raw_mapping['problems'].items():
+            mapping.append((rk['round'], rk['task'], rm))
+        return __make_mapping(mapping)
+
+
 # task mapping
-TASK_MAPPING: Dict[str, GcjMapping] = __make_mapping(
-    [(6254486, 5634697451274240, '2016 Qualification Round -- Revenge of the Pancakes'),
-     (4304486, 5631989306621952, '2016 Round 1A -- The Last Word'),
-     (6254486, 5652388522229760, '2016 Qualification Round -- Counting Sheep'),
-     (4314486, 5753053697277952, '2016 Round 1C -- Senate Evacuation'),
-     (3224486, 5125089213284352, '2016 Round 3 -- Forest University (only one problem set)'),
-     (7234486, 5751639981948928, '2016 Finals -- Family Hotel'),
-     ('000000000019fd74', '00000000002b1353', '2020 Round 1A -- Pattern Matching'),
-     ('0000000000051705', '00000000000881da', '2019 Qualification Round -- You Can Go Your Own Way'),
-     ('000000000019fd27', '000000000020993c', '2020 Qualification Round -- Vestigium (only one problem set)')])
+TASK_MAPPING: Dict[str, GcjMapping]
 
 
 def cleanse_line(line: str) -> str:
@@ -186,12 +188,15 @@ def for_file(path_prefix: str, files: List[GcjFile], sanitize: bool = False) -> 
 if __name__ == '__main__':
     import sys
 
-    if len(sys.argv) < 2:
-        exit(f'{sys.argv[0]} <files...>')
-    csvs = []
+    if len(sys.argv) < 3:
+        exit(f'{sys.argv[0]} <configuration.yaml> <files...>')
 
+    print("==== Loading Configuration")
+    TASK_MAPPING = load_task_mapping(sys.argv[1])
+
+    csvs = []
     print("==== Loading CSVs")
-    for file in sys.argv[1:]:
+    for file in sys.argv[2:]:
         print(f'loading by {sys.argv[0]} for {file}', flush=True)
         csvs.extend(load_csv(file))
 

@@ -3,6 +3,10 @@ FROM python:3.10.2-alpine3.15
 
 RUN addgroup --gid 1000 preparer && adduser --uid 1000 --ingroup preparer --home /home/preparer --disabled-password preparer
 
+
+COPY requirements.txt /
+RUN pip3 install -r /requirements.txt
+
 USER preparer
 WORKDIR /home/preparer
 
