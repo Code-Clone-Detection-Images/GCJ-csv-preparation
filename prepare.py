@@ -121,9 +121,11 @@ def __is_known_java(java_file: GcjFile) -> bool:
 JAVA_EXTRACT_FILENAME = re.compile(r"class\s+(?P<name>[$_A-Za-z][$_A-Za-z0-9]*)")
 
 
-def randomword(length):
-    letters = string.ascii_uppercase
-    return ''.join(random.choice(letters) for _ in range(length))
+def random_class_name(length):
+    assert length > 0
+    letters = string.ascii_letters + string.digits
+    # ensure the first one is a valid uppercase letter, we do not use dollar or underscore for that matter
+    return random.choice(string.ascii_uppercase) + ''.join(random.choice(letters) for _ in range(length - 1))
 
 
 def __replace_class_name(match, cls_name) -> str:
@@ -138,7 +140,7 @@ def __run_java(java_file: GcjFile) -> bool:
         return False
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        fname = randomword(15)
+        fname = random_class_name(25)
         java_file['file'] = f"{fname}.java"
         # update the class name
         java_file['flines'] = re.sub(f"([^A-Za-z0-9]){fln.group('name')}([^A-Za-z0-9])",
@@ -272,5 +274,5 @@ if __name__ == '__main__':
     assign_csv(csvs)
     print(f'loaded with {len(csvs)} entries', flush=True)
 
-    print(f"==== Process Task Mapping [Pick: {CONFIGURATION}]", flush=True)
+    print(f"==== Process Task Mapping [Pick: {CONFIGURATION['pick-random']}]", flush=True)
     process_task_mapping()

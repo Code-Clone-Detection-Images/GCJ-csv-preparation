@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-javac "$1"
+TMP_DIR=$(mktemp -d -t ci-XXXXXXXXXX)
+javac -d "$TMP_DIR"  "$1"
