@@ -1,12 +1,11 @@
-# This enforces to selected just 'n' elements of each solution size (if available)
-# if you supply '0' this is equivalent to pick all, if you supply a negative value
-# this is equivalent to array slicing [0:<pick-random>]
+# This enforces to selected at least 'n' elements of each solution size (if available)
+# negative means infinity. Depending on the multithreading parameter, this may result in more.
 pick-random: 200
 # This decides, if java files should be checked for if they compile and selected based on their performance.
 # This increases the processing time drastically
 do-compile: True
 # This describes the number of parallel file assignment attempts (e.g., the compilation of java files)
-multithreading-poolsize: 15
+multithreading-poolsize: 12
 
 problems:
   2016 Qualification Round -- Revenge of the Pancakes:

@@ -1,5 +1,6 @@
 import csv
-import multiprocessing.dummy
+import multiprocessing
+import multiprocessing.managers
 import os
 import random
 import string
@@ -93,7 +94,7 @@ TASK_MAPPING: Dict[str, GcjMapping]
 CONFIGURATION = {
     'pick-random': 100,
     'do-compile': True,
-    'multithreading-poolsize': 15
+    'multithreading-poolsize': 2 * multiprocessing.cpu_count()
 }
 
 
@@ -118,7 +119,7 @@ def __is_known_java(java_file: GcjFile) -> bool:
 
 
 # exclude line terminators, as they ar not part of the name :)
-JAVA_EXTRACT_FILENAME = re.compile(r"class\s+(?P<name>[$_A-Za-z][$_A-Za-z0-9]*)")
+JAVA_EXTRACT_CLASSNAMES = re.compile(r"class\s+(?P<name>[$_A-Za-z][$_A-Za-z0-9]*)")
 
 
 def random_class_name(length):
@@ -132,36 +133,72 @@ def __replace_class_name(match, cls_name) -> str:
     return f"{match.group(1)}{cls_name}{match.group(2)}"
 
 
-def __run_java(java_file: GcjFile) -> bool:
+ClassNameMapping = Dict[str, str]
+FileNameMapping = Dict[str, str]
+
+
+class JavaFileHasInvalidClassesException(Exception):
+    pass
+
+
+def __create_java_filename_mapping(java_files: List[GcjFile]) -> Tuple[FileNameMapping, ClassNameMapping]:
+    file_name_mapping: FileNameMapping = {}
+    class_name_mapping: ClassNameMapping = {}
+    for java_file in java_files:
+        # why not find all? it returns strings...
+        all_classes = list(JAVA_EXTRACT_CLASSNAMES.finditer(java_file['flines']))
+        if len(all_classes) == 0:
+            raise JavaFileHasInvalidClassesException
+        for i, c in enumerate(all_classes):
+            new_name = random_class_name(25)
+            if i == 0:  # use first
+                file_name_mapping[java_file['file']] = new_name
+            class_name_mapping[all_classes[0]['name']] = new_name
+
+    return file_name_mapping, class_name_mapping
+
+
+def __apply_java_file_mapping(java_files: List[GcjFile], mappings: Tuple[FileNameMapping, ClassNameMapping]) -> None:
+    for java_file in java_files:
+        # update file name
+        java_file['file'] = mappings[0][java_file['file']] + ".java"
+        # update all classes
+        for map_from, map_to in mappings[1].items():
+            java_file['flines'] = re.sub(f"([^A-Za-z0-9]){map_from}([^A-Za-z0-9])",
+                                         lambda m: __replace_class_name(m, map_to), java_file['flines'])
+
+
+def __run_java(java_files: List[GcjFile]) -> bool:
     """Return true only if the java program can be compiled without extra work"""
     # produce a temporary file, but keep the name of the file
-    fln = JAVA_EXTRACT_FILENAME.search(java_file['flines'])
-    if not fln:
+    # create a mapping from old to new unique class names
+    try:
+        fln_mapping = __create_java_filename_mapping(java_files)
+    except JavaFileHasInvalidClassesException:
         return False
 
+    __apply_java_file_mapping(java_files, fln_mapping)
+    if not CONFIGURATION['do-compile']:
+        return True
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        fname = random_class_name(25)
-        java_file['file'] = f"{fname}.java"
-        # update the class name
-        java_file['flines'] = re.sub(f"([^A-Za-z0-9]){fln.group('name')}([^A-Za-z0-9])",
-                                     lambda m: __replace_class_name(m, fname), java_file['flines'])
-        with open(os.path.join(tmpdir, fname + '.java'), 'w') as fl:
-            fl.write(java_file['flines'])
-            try:
-                subprocess.check_call(['/usr/bin/env', 'bash', '/check_compile_java.sh', fl.name], stdout=sys.stdout,
-                                      stderr=sys.stderr)
-                return True
-            except subprocess.CalledProcessError:
-                # call did fail
-                print(f"Can not compile {java_file['file']} skipping", flush=True)
-                return False
+        for file in java_files:
+            # write file for temp compile
+            with open(os.path.join(tmpdir, file['file']), 'w') as fl:
+                fl.write(file['flines'])
+        filenames = list(map(lambda x: os.path.join(tmpdir, x['file']), java_files))
+        try:
+            subprocess.check_call(['/usr/bin/env', 'bash', '/check_compile_java.sh'] +
+                                  filenames, stdout=sys.stdout, stderr=sys.stderr)
+            print(f"Accepted {filenames}", flush=True)
+            return True
+        except subprocess.CalledProcessError:
+            # call did fail
+            print(f"Can not compile {filenames} skipping", flush=True)
+            return False
 
 
-def __usable_java(java_file: GcjFile) -> bool:
-    """To be usable, a java file must only contain import statements that are part of the standard.
-       We may permit package declarations and remove them if necessary with each tool."""
-    return __is_known_java(java_file) and (not CONFIGURATION['do-compile'] or __run_java(java_file))
-
+__usable_java = __is_known_java
 
 # OLD: we restrict ourselves to files that use system.in and system.out
 
@@ -188,10 +225,8 @@ def __assign_single(f: GcjFile) -> None:
 
 
 def assign_csv(files: List[GcjFile]) -> None:
-    pool = multiprocessing.dummy.Pool(CONFIGURATION['multithreading-poolsize'])
-    pool.map(__assign_single, files)
-    pool.close()
-    pool.join()
+    for f in files:
+        __assign_single(f)
 
 
 def __dump_task_mapping(m: GcjMapping, lang: str) -> str:
@@ -224,6 +259,16 @@ def decode_solution_string(sol: GcjFileSolution) -> str:
         return 'other'
 
 
+def __process_for_file(lock, remaining, prefix: str, file_type: str, user: Username, files: List[GcjFile]) -> None:
+    if remaining.value == 0:
+        return
+    user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
+    result = for_file(user_prefix, files, file_type == 'c')
+    if remaining.value > 0 and result:
+        with lock:
+            remaining.value -= 1
+
+
 def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFileSolution):
     assert file_type == "java" or file_type == "c"
     solution_string = decode_solution_string(solution)
@@ -232,25 +277,40 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
     # instead of random.choices we use one shuffle and pick from the start, this is faster than iterated random perm.
     users = list(value[f'{file_type}_{solution_string}_files'].items())  # type: ignore
     random.shuffle(users)
-    for user, files in users[0:CONFIGURATION['pick-random']] if CONFIGURATION['pick-random'] != 0 else users:
-        # NOTE: we sanitize this username to prevent problems with path injects
-        user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
-        os.makedirs(user_prefix, exist_ok=True, mode=0o777)
-        for_file(user_prefix, files, file_type == 'c')  # only sanitize c-files for CCCD atm
+    # well...
+    manager = multiprocessing.Manager()
+    remaining = manager.Value('remaining', CONFIGURATION['pick-random'])
+    lock = manager.Lock()
+    pool = multiprocessing.Pool(processes=CONFIGURATION['multithreading-poolsize'])
+
+    args = list(map(lambda u: (lock, remaining, prefix, file_type, u[0], u[1]), users))
+    pool.starmap(__process_for_file, args)
+    pool.close()
+    pool.join()
 
 
-def for_file(path_prefix: str, files: List[GcjFile], sanitize_name: bool = False) -> None:
+update_java_files_for_final = __run_java
+
+
+def for_file(path_prefix: str, files: List[GcjFile], is_c_file: bool = False) -> bool:
+    """Returns true, iff it is either a c file or a java file that is configured to 'must' compile and does"""
     # Note: because more modern GCJs supply multiple problems sizes but do no longer encode them uniformly,
     # for "other" problems we only select one solution id as they are the same most of the time
     selected_solution = random.choice(tuple(set(map(lambda x: x['solution'], files))))
-    for f in filter(lambda x: x['solution'] == selected_solution, files):
+    important_files = list(filter(lambda x: x['solution'] == selected_solution, files))
+    if not is_c_file and not update_java_files_for_final(important_files):
+        return False  # unwanted java file
+
+    os.makedirs(path_prefix, exist_ok=True, mode=0o777)
+    for f in important_files:
         target = os.path.join(path_prefix, decode_solution(f['solution']))
         os.makedirs(target, exist_ok=True)
         filename = os.path.basename(f['file'])
-        if sanitize_name:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
+        if is_c_file:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
             filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_')
         with open(os.path.join(target, filename), 'w') as fl:
             fl.write(f['flines'])
+    return True
 
 
 if __name__ == '__main__':
