@@ -18,4 +18,5 @@ make
 
 After the command, you will find all prepared folders inside of [`gcj/`](gcj).
 
-> The requirements have been created using [pipreqs](https://pypi.org/project/pipreqs/).
+> The requirements for the [`prepare.py`] (which is run inside the docker-container) have been created 
+> using [pipreqs](https://pypi.org/project/pipreqs/) with `pipreqs --print > requirements.txt`.

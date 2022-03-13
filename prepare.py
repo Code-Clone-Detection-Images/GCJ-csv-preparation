@@ -1,7 +1,11 @@
 import csv
+import multiprocessing.dummy
 import os
 import random
+import string
 import re
+import subprocess
+import tempfile
 from collections import defaultdict
 from enum import Enum
 from itertools import product
@@ -70,19 +74,27 @@ def __make_mapping(sources: List[Tuple[Union[int, str], Union[int, str], RoundNa
     return ret
 
 
-def load_task_mapping(configuration_file: str) -> Tuple[Dict[str, GcjMapping], int]:
+def load_task_mapping(configuration_file: str) -> Tuple[Dict[str, GcjMapping], Dict[str, Union[int, bool]]]:
     with open(configuration_file, 'r') as f:
         raw_mapping = yaml.safe_load(f)
         # use the old-school mapping stuff
         mapping = []
         for rm, rk in raw_mapping['problems'].items():
             mapping.append((rk['round'], rk['task'], rm))
-        return __make_mapping(mapping), int(raw_mapping['pick-random'])
+        return __make_mapping(mapping), {
+            'pick-random': int(raw_mapping['pick-random']),
+            'do-compile': bool(raw_mapping['do-compile']),
+            'multithreading-poolsize': int(raw_mapping['multithreading-poolsize']),
+        }
 
 
 # task mapping
 TASK_MAPPING: Dict[str, GcjMapping]
-PICK_COUNT: int
+CONFIGURATION = {
+    'pick-random': 100,
+    'do-compile': True,
+    'multithreading-poolsize': 15
+}
 
 
 def cleanse_line(line: str) -> str:
@@ -105,16 +117,48 @@ def __is_known_java(java_file: GcjFile) -> bool:
             __is_java(java_file['full_path']) or __is_java(java_file['file']))
 
 
-# we make an inverse check to forbid java
-NEGATIVE_USABLE_JAVA_REGEX = re.compile(r"import (?!java)[^;]*;")
+# exclude line terminators, as they ar not part of the name :)
+JAVA_EXTRACT_FILENAME = re.compile(r"class\s+(?P<name>[$_A-Za-z][$_A-Za-z0-9]*)")
+
+
+def randomword(length):
+    letters = string.ascii_uppercase
+    return ''.join(random.choice(letters) for _ in range(length))
+
+
+def __replace_class_name(match, cls_name) -> str:
+    return f"{match.group(1)}{cls_name}{match.group(2)}"
+
+
+def __run_java(java_file: GcjFile) -> bool:
+    """Return true only if the java program can be compiled without extra work"""
+    # produce a temporary file, but keep the name of the file
+    fln = JAVA_EXTRACT_FILENAME.search(java_file['flines'])
+    if not fln:
+        return False
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fname = randomword(15)
+        java_file['file'] = f"{fname}.java"
+        # update the class name
+        java_file['flines'] = re.sub(f"([^A-Za-z0-9]){fln.group('name')}([^A-Za-z0-9])",
+                                     lambda m: __replace_class_name(m, fname), java_file['flines'])
+        with open(os.path.join(tmpdir, fname + '.java'), 'w') as fl:
+            fl.write(java_file['flines'])
+            try:
+                subprocess.check_call(['/usr/bin/env', 'bash', '/check_compile_java.sh', fl.name], stdout=sys.stdout,
+                                      stderr=sys.stderr)
+                return True
+            except subprocess.CalledProcessError:
+                # call did fail
+                print(f"Can not compile {java_file['file']} skipping", flush=True)
+                return False
 
 
 def __usable_java(java_file: GcjFile) -> bool:
     """To be usable, a java file must only contain import statements that are part of the standard.
-       We may permit package declarations and remove them if necessary with each tool. """
-    return __is_known_java(java_file) and (
-        not NEGATIVE_USABLE_JAVA_REGEX.search(java_file['flines'])
-    )
+       We may permit package declarations and remove them if necessary with each tool."""
+    return __is_known_java(java_file) and (not CONFIGURATION['do-compile'] or __run_java(java_file))
 
 
 # OLD: we restrict ourselves to files that use system.in and system.out
@@ -131,13 +175,21 @@ def __is_known_c(c_file: GcjFile) -> bool:
 __usable_c = __is_known_c
 
 
-def assign_csv(files: List[GcjFile]):
-    for f in files:
-        suffix = 'small' if f['solution'] == '0' else 'large' if f['solution'] == '1' else 'other'
-        if __usable_java(f):
-            TASK_MAPPING[__build_file_id(f)][f'java_{suffix}_files'][f['username']].append(f)  # type: ignore
-        elif __usable_c(f):
-            TASK_MAPPING[__build_file_id(f)][f'c_{suffix}_files'][f['username']].append(f)  # type: ignore
+def __assign_single(f: GcjFile) -> None:
+    suffix = 'small' if f['solution'] == '0' else 'large' if f['solution'] == '1' else 'other'
+    if __usable_c(f):  # if we check c first, we may avoid some compiles if methods change
+        # NOTE: we adapt the filename for we have consistent usage with the java renaming strategy for agec
+        f['file'] = os.path.basename(f['full_path'] if f['full_path'] else f['file'].lower())
+        TASK_MAPPING[__build_file_id(f)][f'c_{suffix}_files'][f['username']].append(f)  # type: ignore
+    elif __usable_java(f):
+        TASK_MAPPING[__build_file_id(f)][f'java_{suffix}_files'][f['username']].append(f)  # type: ignore
+
+
+def assign_csv(files: List[GcjFile]) -> None:
+    pool = multiprocessing.dummy.Pool(CONFIGURATION['multithreading-poolsize'])
+    pool.map(__assign_single, files)
+    pool.close()
+    pool.join()
 
 
 def __dump_task_mapping(m: GcjMapping, lang: str) -> str:
@@ -178,7 +230,7 @@ def extract_file(prefix: str, value: GcjMapping, file_type: str, solution: GcjFi
     # instead of random.choices we use one shuffle and pick from the start, this is faster than iterated random perm.
     users = list(value[f'{file_type}_{solution_string}_files'].items())  # type: ignore
     random.shuffle(users)
-    for user, files in users[0:PICK_COUNT] if PICK_COUNT != 0 else users:
+    for user, files in users[0:CONFIGURATION['pick-random']] if CONFIGURATION['pick-random'] != 0 else users:
         # NOTE: we sanitize this username to prevent problems with path injects
         user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
         os.makedirs(user_prefix, exist_ok=True, mode=0o777)
@@ -192,7 +244,7 @@ def for_file(path_prefix: str, files: List[GcjFile], sanitize_name: bool = False
     for f in filter(lambda x: x['solution'] == selected_solution, files):
         target = os.path.join(path_prefix, decode_solution(f['solution']))
         os.makedirs(target, exist_ok=True)
-        filename = os.path.basename(f['full_path'] if f['full_path'] else f['file'].lower())
+        filename = os.path.basename(f['file'])
         if sanitize_name:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
             filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_')
         with open(os.path.join(target, filename), 'w') as fl:
@@ -206,7 +258,9 @@ if __name__ == '__main__':
         exit(f'{sys.argv[0]} <configuration.yaml> <files...>')
 
     print("==== Loading Configuration")
-    TASK_MAPPING, PICK_COUNT = load_task_mapping(sys.argv[1])
+    TASK_MAPPING, CONFIGURATION = load_task_mapping(sys.argv[1])
+    print('mapping: ', TASK_MAPPING)
+    print('configuration: ', CONFIGURATION)
 
     csvs = []
     print("==== Loading CSVs")
@@ -214,9 +268,9 @@ if __name__ == '__main__':
         print(f'loading by {sys.argv[0]} for {file}', flush=True)
         csvs.extend(load_csv(file))
 
-    print("==== Assigning CSVs", flush=True)
+    print("==== Assigning CSVs (this may take a while, compiling...)", flush=True)
     assign_csv(csvs)
     print(f'loaded with {len(csvs)} entries', flush=True)
 
-    print(f"==== Process Task Mapping [Pick: {PICK_COUNT}]", flush=True)
+    print(f"==== Process Task Mapping [Pick: {CONFIGURATION}]", flush=True)
     process_task_mapping()
