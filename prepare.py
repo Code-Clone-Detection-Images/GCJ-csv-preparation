@@ -260,7 +260,7 @@ def decode_solution_string(sol: GcjFileSolution) -> str:
 
 
 def __process_for_file(lock, remaining, prefix: str, file_type: str, user: Username, files: List[GcjFile]) -> None:
-    if remaining.value == 0:
+    if remaining.value <= 0:
         return
     user_prefix = path.join(prefix, user.replace('/', '__').replace('\\', '~~'))
     result = for_file(user_prefix, files, file_type == 'c')
