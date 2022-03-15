@@ -309,7 +309,7 @@ def for_file(path_prefix: str, files: List[GcjFile], is_c_file: bool = False) ->
         os.makedirs(target, exist_ok=True)
         filename = os.path.basename(f['file'])
         if is_c_file:  # spaces, braces etc. are a problem. some tools like CCCD do not allow them
-            filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_')
+            filename = filename.replace(' ', '-').replace('(', '_').replace(')', '_').replace('.C', '.c')
         with open(os.path.join(target, filename), 'w') as fl:
             fl.write(f['flines'])
     return True
