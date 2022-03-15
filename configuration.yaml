@@ -1,7 +1,7 @@
 # This enforces to selected at least 'n' elements of each solution size (if available).
 # Depending on the multithreading parameter, this may result in more.
 # The only way to select all is to select an unreasonably high number
-pick-random: 200
+pick-random: 100
 # This decides, if java files should be checked for if they compile and selected based on their performance.
 # This increases the processing time drastically
 do-compile: True
@@ -30,9 +30,6 @@ problems:
   "2017 Round 1B -- Steed 2: Cruise Control":
     round: 8294486
     task: 5630967708385280
-  2019 Qualification Round -- You Can Go Your Own Way:
-    round: 0000000000051705
-    task: 00000000000881da
   2020 Round 1A -- Pattern Matching:
     round: 000000000019fd74
     task: 00000000002b1353

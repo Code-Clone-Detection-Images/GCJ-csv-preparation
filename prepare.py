@@ -120,6 +120,8 @@ def __is_known_java(java_file: GcjFile) -> bool:
 
 # exclude line terminators, as they ar not part of the name :)
 JAVA_EXTRACT_CLASSNAMES = re.compile(r"class\s+(?P<name>[$_A-Za-z][$_A-Za-z0-9]*)")
+# if collisions are to likely
+CLASS_NAME_LENGTH = 25
 
 
 def random_class_name(length):
@@ -150,7 +152,7 @@ def __create_java_filename_mapping(java_files: List[GcjFile]) -> Tuple[FileNameM
         if len(all_classes) == 0:
             raise JavaFileHasInvalidClassesException
         for i, c in enumerate(all_classes):
-            new_name = random_class_name(25)
+            new_name = random_class_name(CLASS_NAME_LENGTH)
             if i == 0:  # use first
                 file_name_mapping[java_file['file']] = new_name
             class_name_mapping[all_classes[0]['name']] = new_name
