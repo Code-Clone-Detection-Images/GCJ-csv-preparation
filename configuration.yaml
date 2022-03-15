@@ -6,7 +6,7 @@ pick-random: 200
 # This increases the processing time drastically
 do-compile: True
 # This describes the number of parallel file assignment attempts (e.g., the compilation of java files)
-multithreading-poolsize: 12
+multithreading-poolsize: 14
 
 problems:
   2016 Qualification Round -- Revenge of the Pancakes:
@@ -27,6 +27,9 @@ problems:
   2016 Finals -- Family Hotel:
     round: 7234486
     task: 5751639981948928
+  "2017 Round 1B -- Steed 2: Cruise Control":
+    round: 8294486
+    task: 5630967708385280
   2019 Qualification Round -- You Can Go Your Own Way:
     round: 0000000000051705
     task: 00000000000881da
