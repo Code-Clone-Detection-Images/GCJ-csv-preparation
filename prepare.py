@@ -204,7 +204,7 @@ __usable_java = __is_known_java
 
 
 def __is_c(name: str) -> bool:
-    return name.lower().endswith(('.c', '.cpp', '.h', '.hpp'))
+    return name.lower().endswith(('.c', '.h'))
 
 
 def __is_known_c(c_file: GcjFile) -> bool:
